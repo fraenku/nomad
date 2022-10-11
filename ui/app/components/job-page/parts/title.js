@@ -28,6 +28,19 @@ export default class Title extends Component {
   stopJob;
 
   @task(function* () {
+    try {
+      const job = this.job;
+      yield job.purge();
+    } catch (err) {
+      this.handleError({
+        title: 'Could Not Purge Job',
+        description: messageFromAdapterError(err, 'purge jobs'),
+      });
+    }
+  })
+  purgeJob;
+
+  @task(function* () {
     const job = this.job;
     const definition = yield job.fetchRawDefinition();
 
