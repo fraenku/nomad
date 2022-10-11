@@ -1,0 +1,35 @@
+syntax = "proto3";
+package hashicorp.nomad.plugins.logging;
+option go_package = "proto";
+
+// LoggingPlugin is the API exposed by logging plugins
+service LoggingPlugin {
+  rpc Start(StartRequest) returns (StartResponse) {}
+  rpc Stop(StopRequest) returns (StopResponse) {}
+
+  // Capabilities allows the logging plugin to return a set of capabilities.
+  // The client will fingerprint the logging plugin once at startup.
+  rpc Capabilities(CapabilitiesRequest) returns (CapabilitiesResponse) {}
+}
+
+message StartRequest {
+    string log_dir = 1;
+    string stdout_file_name = 2;
+    string stderr_file_name = 3;
+    uint32 max_files = 4;
+    uint32 max_file_size_mb = 5;
+    string stdout_fifo = 6;
+    string stderr_fifo = 7;
+}
+
+message StartResponse {}
+
+message StopRequest {}
+
+message StopResponse {}
+
+// CapabilitiesRequest is used to get the capabilities of the logging plugin.
+message CapabilitiesRequest {}
+
+// CapabilitiesResponse returns the logging plugin's capabilities.
+message CapabilitiesResponse {}

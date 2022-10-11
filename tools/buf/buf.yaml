@@ -22,6 +22,7 @@ lint:
       - plugins/base/proto/base.proto
       - plugins/device/proto/device.proto
       - plugins/drivers/proto/driver.proto
+      - plugins/logging/proto/logging.proto
       - plugins/shared/hclspec/hcl_spec.proto
       - plugins/shared/structs/proto/attribute.proto
       - plugins/shared/structs/proto/recoverable_error.proto
@@ -33,6 +34,7 @@ lint:
       - plugins/base/proto/base.proto
       - plugins/device/proto/device.proto
       - plugins/drivers/proto/driver.proto
+      - plugins/logging/proto/logging.proto
       - plugins/shared/hclspec/hcl_spec.proto
       - plugins/shared/structs/proto/attribute.proto
       - plugins/shared/structs/proto/recoverable_error.proto
@@ -44,6 +46,7 @@ lint:
       - plugins/base/proto/base.proto
       - plugins/device/proto/device.proto
       - plugins/drivers/proto/driver.proto
+      - plugins/logging/proto/logging.proto
 
 breaking:
   use:
