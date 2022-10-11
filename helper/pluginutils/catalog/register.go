@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"github.com/hashicorp/nomad/client/logmon"
 	"github.com/hashicorp/nomad/drivers/docker"
 	"github.com/hashicorp/nomad/drivers/exec"
 	"github.com/hashicorp/nomad/drivers/java"
@@ -17,4 +18,5 @@ func init() {
 	Register(qemu.PluginID, qemu.PluginConfig)
 	Register(java.PluginID, java.PluginConfig)
 	RegisterDeferredConfig(docker.PluginID, docker.PluginConfig, docker.PluginLoader)
+	Register(logmon.PluginID, logmon.PluginConfig)
 }

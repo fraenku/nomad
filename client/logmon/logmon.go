@@ -1,6 +1,7 @@
 package logmon
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,8 @@ import (
 	hclog "github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad/client/lib/fifo"
 	"github.com/hashicorp/nomad/client/logmon/logging"
+	"github.com/hashicorp/nomad/helper/pluginutils/loader"
+	"github.com/hashicorp/nomad/plugins/base"
 )
 
 const (
@@ -18,6 +21,19 @@ const (
 	// launched process to close its stdout/stderr before we force close it. If
 	// data is written after this tolerance, we will not capture it.
 	processOutputCloseTolerance = 2 * time.Second
+)
+
+var (
+	// PluginID is the docker plugin metadata registered in the plugin catalog.
+	PluginID = loader.PluginID{
+		Name:       "logmon",
+		PluginType: base.PluginTypeLogging,
+	}
+
+	PluginConfig = &loader.InternalPluginConfig{
+		Config:  map[string]interface{}{},
+		Factory: func(ctx context.Context, l hclog.Logger) interface{} { return NewLogMon(l) },
+	}
 )
 
 type LogConfig struct {

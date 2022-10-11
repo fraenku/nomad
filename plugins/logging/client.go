@@ -51,3 +51,6 @@ func (c *loggingClient) Capabilities() (*Capabilities, error) {
 	_, err := c.client.Capabilities(ctx, req)
 	return &Capabilities{}, err
 }
+
+// func (c *loggingClient) ReattachConfig() *plugin.ReattachConfig {
+// }

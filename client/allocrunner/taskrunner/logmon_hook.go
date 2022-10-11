@@ -10,15 +10,18 @@ import (
 
 	hclog "github.com/hashicorp/go-hclog"
 	plugin "github.com/hashicorp/go-plugin"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+
 	"github.com/hashicorp/nomad/client/allocrunner/interfaces"
 	"github.com/hashicorp/nomad/client/logmon"
+	"github.com/hashicorp/nomad/client/pluginmanager/loggingmanager"
 	"github.com/hashicorp/nomad/helper/uuid"
 	"github.com/hashicorp/nomad/nomad/structs"
 	bstructs "github.com/hashicorp/nomad/plugins/base/structs"
 	"github.com/hashicorp/nomad/plugins/drivers"
+	"github.com/hashicorp/nomad/plugins/logging"
 	pstructs "github.com/hashicorp/nomad/plugins/shared/structs"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 )
 
 const (
@@ -30,6 +33,12 @@ const (
 // logmonHook launches logmon and manages task logging
 type logmonHook struct {
 	runner *TaskRunner
+
+	// plugin is the handle to the log monitoring process for this task
+	plugin *loggingmanager.LoggingPlugin
+
+	// pluginManager dispenses plugins appropriate for the task
+	pluginManager loggingmanager.Manager
 
 	// logmon is the handle to the log monitor process for the task.
 	logmon             logmon.LogMon
@@ -75,14 +84,20 @@ func (*logmonHook) Name() string {
 	return "logmon"
 }
 
-func (h *logmonHook) launchLogMon(reattachConfig *plugin.ReattachConfig) error {
-	l, c, err := logmon.LaunchLogMon(h.logger, reattachConfig)
+func (h *logmonHook) launchLoggingPlugin(reattachConfig *plugin.ReattachConfig) error {
+	plugin, err := h.pluginManager.Dispense("logmon", h.logger, reattachConfig)
 	if err != nil {
 		return err
 	}
+	h.plugin = plugin
 
-	h.logmon = l
-	h.logmonPluginClient = c
+	// l, c, err := logmon.LaunchLogMon(h.logger, reattachConfig)
+	// if err != nil {
+	// 	return err
+	// }
+
+	// h.logmon = l
+	// h.logmonPluginClient = c
 	return nil
 }
 
@@ -122,14 +137,16 @@ func (h *logmonHook) Prestart(ctx context.Context,
 			// retry after killing process and ensure we start a new logmon process
 			attempts++
 			h.logger.Warn("logmon shutdown while making request; retrying", "attempts", attempts, "error", err)
-			h.logmonPluginClient.Kill()
+			h.plugin.Stop()
+			//h.logmonPluginClient.Kill()
 			time.Sleep(1 * time.Second)
 			continue
 		} else if err != nil {
 			return err
 		}
 
-		rCfg := pstructs.ReattachConfigFromGoPlugin(h.logmonPluginClient.ReattachConfig())
+		rCfg := pstructs.ReattachConfigFromGoPlugin(h.plugin.ReattachConfig())
+		// rCfg := pstructs.ReattachConfigFromGoPlugin(h.logmonPluginClient.ReattachConfig())
 		jsonCfg, err := json.Marshal(rCfg)
 		if err != nil {
 			return err
@@ -151,14 +168,15 @@ func (h *logmonHook) isLoggingDisabled() bool {
 
 func (h *logmonHook) prestartOneLoop(ctx context.Context, req *interfaces.TaskPrestartRequest) error {
 	// attach to a running logmon if state indicates one
-	if h.logmonPluginClient == nil {
+	if h.plugin == nil {
+		//if h.logmonPluginClient == nil {
 		reattachConfig, err := reattachConfigFromHookData(req.PreviousState)
 		if err != nil {
 			h.logger.Error("failed to load reattach config", "error", err)
 			return err
 		}
 		if reattachConfig != nil {
-			if err := h.launchLogMon(reattachConfig); err != nil {
+			if err := h.launchLoggingPlugin(reattachConfig); err != nil {
 				h.logger.Warn("failed to reattach to logmon process", "error", err)
 				// if we failed to launch logmon, try again below
 			}
@@ -167,8 +185,9 @@ func (h *logmonHook) prestartOneLoop(ctx context.Context, req *interfaces.TaskPr
 	}
 
 	// create a new client in initial starts, failed reattachment, or if we detect exits
-	if h.logmonPluginClient == nil || h.logmonPluginClient.Exited() {
-		if err := h.launchLogMon(nil); err != nil {
+	if h.plugin == nil || h.plugin.Exited() {
+		//		if h.logmonPluginClient == nil || h.logmonPluginClient.Exited() {
+		if err := h.launchLoggingPlugin(nil); err != nil {
 			// Retry errors launching logmon as logmon may have crashed on start and
 			// subsequent attempts will start a new one.
 			h.logger.Error("failed to launch logmon process", "error", err)
@@ -176,7 +195,21 @@ func (h *logmonHook) prestartOneLoop(ctx context.Context, req *interfaces.TaskPr
 		}
 	}
 
-	err := h.logmon.Start(&logmon.LogConfig{
+	err := h.plugin.Start(&logging.LogConfig{
+		LogDir:        h.config.logDir,
+		StdoutLogFile: fmt.Sprintf("%s.stdout", req.Task.Name),
+		StderrLogFile: fmt.Sprintf("%s.stderr", req.Task.Name),
+		StdoutFifo:    h.config.stdoutFifo,
+		StderrFifo:    h.config.stderrFifo,
+		MaxFiles:      req.Task.LogConfig.MaxFiles,
+		MaxFileSizeMB: req.Task.LogConfig.MaxFileSizeMB,
+	})
+	if err != nil {
+		h.logger.Error("failed to start logging plugin", "error", err)
+		return err
+	}
+
+	err = h.logmon.Start(&logmon.LogConfig{
 		LogDir:        h.config.logDir,
 		StdoutLogFile: fmt.Sprintf("%s.stdout", req.Task.Name),
 		StderrLogFile: fmt.Sprintf("%s.stderr", req.Task.Name),
@@ -195,19 +228,32 @@ func (h *logmonHook) prestartOneLoop(ctx context.Context, req *interfaces.TaskPr
 
 func (h *logmonHook) Stop(_ context.Context, req *interfaces.TaskStopRequest, _ *interfaces.TaskStopResponse) error {
 
+	// // It's possible that Stop was called without calling Prestart on agent
+	// // restarts. Attempt to reattach to an existing logmon.
+	// if h.logmon == nil || h.logmonPluginClient == nil {
+	// 	if err := h.reattach(req); err != nil {
+	// 		h.logger.Trace("error reattaching to logmon when stopping", "error", err)
+	// 	}
+	// }
+
 	// It's possible that Stop was called without calling Prestart on agent
-	// restarts. Attempt to reattach to an existing logmon.
-	if h.logmon == nil || h.logmonPluginClient == nil {
+	// restarts. Attempt to reattach to an existing plugin
+	if h.plugin == nil {
 		if err := h.reattach(req); err != nil {
-			h.logger.Trace("error reattaching to logmon when stopping", "error", err)
+			h.logger.Trace("error reattaching to plugin when stopping", "error", err)
 		}
 	}
 
-	if h.logmon != nil {
-		h.logmon.Stop()
-	}
-	if h.logmonPluginClient != nil {
-		h.logmonPluginClient.Kill()
+	// if h.logmon != nil {
+	// 	h.logmon.Stop()
+	// }
+	// if h.logmonPluginClient != nil {
+	// 	h.logmonPluginClient.Kill()
+	// }
+
+	if h.plugin != nil {
+		h.plugin.Stop()
+		h.plugin.Kill()
 	}
 
 	return nil
@@ -225,5 +271,5 @@ func (h *logmonHook) reattach(req *interfaces.TaskStopRequest) error {
 		return nil
 	}
 
-	return h.launchLogMon(reattachConfig)
+	return h.launchLoggingPlugin(reattachConfig)
 }
