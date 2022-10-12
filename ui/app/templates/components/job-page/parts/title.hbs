@@ -26,15 +26,6 @@
         @onConfirm={{perform this.stopJob}} />
     {{else}}
       <TwoStepButton
-        data-test-start
-        @alignRight={{true}}
-        @idleText="Start Job"
-        @cancelText="Cancel"
-        @confirmText="Yes, Start Job"
-        @confirmationMessage="Are you sure you want to start this job?"
-        @awaitingConfirmation={{this.startJob.isRunning}}
-        @onConfirm={{perform this.startJob}} />
-      <TwoStepButton
         data-test-purge
         @alignRight={{true}}
         @idleText="Purge Job"
@@ -43,6 +34,15 @@
         @confirmationMessage="Are you sure? You cannot undo this action."
         @awaitingConfirmation={{this.purgeJob.isRunning}}
         @onConfirm={{perform this.purgeJob}} />
+      <TwoStepButton
+        data-test-start
+        @alignRight={{true}}
+        @idleText="Start Job"
+        @cancelText="Cancel"
+        @confirmText="Yes, Start Job"
+        @confirmationMessage="Are you sure you want to start this job?"
+        @awaitingConfirmation={{this.startJob.isRunning}}
+        @onConfirm={{perform this.startJob}} />
     {{/if}}
   </div>
 </h1>
